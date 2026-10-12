@@ -102,8 +102,14 @@ const samplePRs = [
   { title: 'style: reformat', number: 7, user: { login: 'grace' } },
 ];
 
+test("buildBody: starts with \"## What's changed\"", () => {
+  const date = new Date(2026, 9, 12);
+  const body = buildBody(samplePRs, false, date);
+  assert.ok(body.startsWith("## What's changed\n"));
+});
+
 test('buildBody: groups and ordering', () => {
-  const date = new Date(2026, 9, 12); // Oct 12, 2026
+  const date = new Date(2026, 9, 12);
   const body = buildBody(samplePRs, false, date);
 
   assert.match(body, /### Added/);
@@ -112,7 +118,6 @@ test('buildBody: groups and ordering', () => {
   assert.match(body, /### Changed/);
   assert.match(body, /### Code style updates/);
 
-  // Order: Added before Fixed before Document updates before Changed before Code style updates
   const idxAdded = body.indexOf('### Added');
   const idxFixed = body.indexOf('### Fixed');
   const idxDocs = body.indexOf('### Document updates');
@@ -124,20 +129,38 @@ test('buildBody: groups and ordering', () => {
   assert.ok(idxDocs < idxChanged);
   assert.ok(idxChanged < idxStyle);
 
-  assert.ok(body.endsWith('Release on 12/10/2026'));
+  assert.ok(body.endsWith('Released on 12/10/2026'));
 });
 
 test('buildBody: merge fix and hotfix under Fixed', () => {
   const date = new Date(2026, 9, 12);
   const body = buildBody(samplePRs, false, date);
-  const fixedSection = body.split('### Fixed')[1].split('###')[0];
+
+  const fixedCount = (body.match(/### Fixed/g) || []).length;
+  assert.equal(fixedCount, 1);
+
+  const afterFixed = body.split('### Fixed')[1] || '';
+  const fixedSection = afterFixed.split('###')[0];
+
   assert.match(fixedSection, /- crash by @carol in #3/);
   assert.match(fixedSection, /- null pointer by @dave in #4/);
 });
 
+test('buildBody: no duplicate headers', () => {
+  const date = new Date(2026, 9, 12);
+  const body = buildBody(samplePRs, false, date);
+
+  const headers = body.match(/^### .+$/gm) || [];
+  const unique = new Set(headers);
+  assert.equal(headers.length, unique.size, `Duplicate headers: ${headers.join(', ')}`);
+});
+
 test('buildBody: fails on invalid PR when acceptInvalid=false', () => {
   const prs = [{ title: 'random title', number: 99, user: { login: 'x' } }];
-  assert.throws(() => buildBody(prs, false, new Date(2026, 9, 12)), /not following the convention/);
+  assert.throws(
+    () => buildBody(prs, false, new Date(2026, 9, 12)),
+    /not following the convention/
+  );
 });
 
 test('buildBody: skips invalid PR when acceptInvalid=true', () => {
@@ -151,9 +174,9 @@ test('buildBody: skips invalid PR when acceptInvalid=true', () => {
   assert.doesNotMatch(body, /#99/);
 });
 
-test('buildBody: empty prs still emits date line', () => {
+test('buildBody: empty prs still emits header and date line', () => {
   const body = buildBody([], true, new Date(2026, 9, 12));
-  assert.equal(body, 'Release on 12/10/2026');
+  assert.equal(body, "## What's changed\n\nReleased on 12/10/2026");
 });
 
 // ---------- getPreviousTag ----------
