@@ -1,0 +1,51 @@
+name: 'Auto Release (Conventional Commits)'
+description: 'Automatically create a GitHub Release, parse conventional commits and group them by type (feat/fix/docs/chore/style)'
+author: 'dryfish09'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
+
+inputs:
+  repo_name:
+    description: 'Repository name (e.g. my-repo)'
+    required: true
+  repo_owner:
+    description: 'Repository owner (user or org)'
+    required: true
+  gh_tag:
+    description: 'Tag used to create the release (required, e.g. v1.2.3)'
+    required: true
+  accept_invalid_commit:
+    description: |
+      If false (default): fail the action when a commit/PR does not follow the convention.
+      If true: skip invalid commits/PRs.
+    required: false
+    default: 'false'
+  github_token:
+    description: 'GitHub token used to call the API and create the release'
+    required: false
+    default: ${{ github.token }}
+  release_name:
+    description: 'Release name (default: "Release <gh_tag>")'
+    required: false
+  draft:
+    description: 'Create the release as a draft'
+    required: false
+    default: 'false'
+  prerelease:
+    description: 'Mark the release as a prerelease'
+    required: false
+    default: 'false'
+
+outputs:
+  release_url:
+    description: 'URL of the created release'
+  release_id:
+    description: 'ID of the created release'
+  release_body:
+    description: 'Generated release note body'
+
+runs:
+  using: 'node24'
+  main: 'index.js'
