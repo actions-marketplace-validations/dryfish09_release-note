@@ -20,10 +20,11 @@ async function ghApi(path, token, options = {}) {
   return res;
 }
 
-function getPreviousTag(currentTag) {
+function getPreviousTag(currentTag, tagsRaw) {
   try {
-    const tags = sh('git tag --sort=-v:refname')
+    const tags = (tagsRaw ?? sh('git tag --sort=-v:refname'))
       .split('\n')
+      .map((t) => t.trim())
       .filter(Boolean);
     const idx = tags.indexOf(currentTag);
     if (idx >= 0 && idx + 1 < tags.length) return tags[idx + 1];
@@ -114,108 +115,112 @@ function formatLine(pr) {
   return `- ${name} by @${username} in #${pr.number}`;
 }
 
-(async () => {
-  try {
-    const repoName = core.getInput('repo_name', { required: true });
-    const repoOwner = core.getInput('repo_owner', { required: true });
-    const ghTag = core.getInput('gh_tag', { required: true });
-    const acceptInvalid =
-      core.getInput('accept_invalid_commit').toLowerCase() === 'true';
-    const token = core.getInput('github_token', { required: true });
-    const releaseName = core.getInput('release_name') || `Release ${ghTag}`;
-    const draft = core.getInput('draft').toLowerCase() === 'true';
-    const prerelease = core.getInput('prerelease').toLowerCase() === 'true';
+function buildBody(prs, acceptInvalid, now = new Date()) {
+  for (const g of Object.values(GROUPS)) g.items = [];
 
-    if (!ghTag || !ghTag.trim()) {
-      throw new Error('Input "gh_tag" is required and must not be empty.');
+  const invalid = [];
+
+  for (const pr of prs) {
+    const type = parseType(pr.title);
+    const group = classify(type);
+
+    if (!group) {
+      invalid.push(pr);
+      continue;
     }
 
-    const tagName = ghTag.trim();
-
-    const prevTag = getPreviousTag(tagName);
-    core.info(`Previous tag: ${prevTag || '(none)'}`);
-    core.info(`Current tag:  ${tagName}`);
-
-    const prs = await fetchPRs(repoOwner, repoName, token, prevTag, tagName);
-    core.info(`Found ${prs.length} PR(s).`);
-
-    for (const g of Object.values(GROUPS)) g.items = [];
-
-    const invalid = [];
-
-    for (const pr of prs) {
-      const type = parseType(pr.title);
-      const group = classify(type);
-
-      if (!group) {
-        invalid.push(pr);
-        if (acceptInvalid) {
-          core.warning(`Skipping invalid PR #${pr.number}: "${pr.title}"`);
-          continue;
-        } else {
-          core.error(`PR #${pr.number} does not follow the convention: "${pr.title}"`);
-        }
-        continue;
-      }
-
-      group.items.push(formatLine(pr));
-    }
-
-    if (invalid.length > 0 && !acceptInvalid) {
-      throw new Error(
-        `Found ${invalid.length} PR(s) not following the convention. ` +
-          `Set accept_invalid_commit: true to skip them.`
-      );
-    }
-
-    const sections = Object.values(GROUPS)
-      .sort((a, b) => a.order - b.order)
-      .filter((g) => g.items.length > 0)
-      .map((g) => `${g.header}\n${g.items.join('\n')}`);
-
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const yyyy = now.getFullYear();
-    const dateLine = `Release on ${dd}/${mm}/${yyyy}`;
-
-    const body = sections.length
-      ? `${sections.join('\n\n')}\n\n${dateLine}`
-      : `${dateLine}`;
-
-    core.info('Release notes:');
-    core.info(body);
-
-    const createRes = await ghApi(
-      `/repos/${repoOwner}/${repoName}/releases`,
-      token,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          tag_name: tagName,
-          name: releaseName,
-          body,
-          draft,
-          prerelease,
-        }),
-      }
-    );
-
-    if (!createRes.ok) {
-      const text = await createRes.text();
-      throw new Error(`Failed to create release (${createRes.status}): ${text}`);
-    }
-
-    const release = await createRes.json();
-
-    core.setOutput('release_url', release.html_url);
-    core.setOutput('release_id', String(release.id));
-    core.setOutput('release_body', body);
-
-    fs.writeFileSync('release-notes.md', body);
-
-    core.info(`Release created successfully: ${release.html_url}`);
-  } catch (err) {
-    core.setFailed(err.message);
+    group.items.push(formatLine(pr));
   }
-})();
+
+  if (invalid.length > 0 && !acceptInvalid) {
+    throw new Error(
+      `Found ${invalid.length} PR(s) not following the convention. ` +
+        `Set accept_invalid_commit: true to skip them.`
+    );
+  }
+
+  const sections = Object.values(GROUPS)
+    .sort((a, b) => a.order - b.order)
+    .filter((g) => g.items.length > 0)
+    .map((g) => `${g.header}\n${g.items.join('\n')}`);
+
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = now.getFullYear();
+  const dateLine = `Release on ${dd}/${mm}/${yyyy}`;
+
+  return sections.length
+    ? `${sections.join('\n\n')}\n\n${dateLine}`
+    : `${dateLine}`;
+}
+
+async function run() {
+  const repoName = core.getInput('repo_name', { required: true });
+  const repoOwner = core.getInput('repo_owner', { required: true });
+  const ghTag = core.getInput('gh_tag', { required: true });
+  const acceptInvalid =
+    core.getInput('accept_invalid_commit').toLowerCase() === 'true';
+  const token = core.getInput('github_token', { required: true });
+  const releaseName = core.getInput('release_name') || `Release ${ghTag}`;
+  const draft = core.getInput('draft').toLowerCase() === 'true';
+  const prerelease = core.getInput('prerelease').toLowerCase() === 'true';
+
+  if (!ghTag || !ghTag.trim()) {
+    throw new Error('Input "gh_tag" is required and must not be empty.');
+  }
+
+  const tagName = ghTag.trim();
+  const prevTag = getPreviousTag(tagName);
+  core.info(`Previous tag: ${prevTag || '(none)'}`);
+  core.info(`Current tag:  ${tagName}`);
+
+  const prs = await fetchPRs(repoOwner, repoName, token, prevTag, tagName);
+  core.info(`Found ${prs.length} PR(s).`);
+
+  const body = buildBody(prs, acceptInvalid);
+  core.info('Release notes:');
+  core.info(body);
+
+  const createRes = await ghApi(
+    `/repos/${repoOwner}/${repoName}/releases`,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        tag_name: tagName,
+        name: releaseName,
+        body,
+        draft,
+        prerelease,
+      }),
+    }
+  );
+
+  if (!createRes.ok) {
+    const text = await createRes.text();
+    throw new Error(`Failed to create release (${createRes.status}): ${text}`);
+  }
+
+  const release = await createRes.json();
+
+  core.setOutput('release_url', release.html_url);
+  core.setOutput('release_id', String(release.id));
+  core.setOutput('release_body', body);
+
+  fs.writeFileSync('release-notes.md', body);
+
+  core.info(`Release created successfully: ${release.html_url}`);
+}
+
+if (require.main === module) {
+  run().catch((err) => core.setFailed(err.message));
+}
+
+module.exports = {
+  parseType,
+  classify,
+  formatLine,
+  buildBody,
+  getPreviousTag,
+  GROUPS,
+};
