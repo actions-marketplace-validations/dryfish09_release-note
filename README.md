@@ -90,7 +90,7 @@ jobs:
           fetch-depth: 0
 
       - name: release-note
-        uses: dryfish09/release-note@v1
+        uses: dryfish09/release-note@v2
         with:
           repo_name: ${{ github.event.repository.name }}
           repo_owner: ${{ github.repository_owner }}
