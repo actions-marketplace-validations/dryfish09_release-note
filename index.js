@@ -12,7 +12,7 @@ async function ghApi(path, token, options = {}) {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'auto-release-action',
+      'User-Agent': 'release-note',
       'X-GitHub-Api-Version': '2022-11-28',
       ...(options.headers || {}),
     },
@@ -156,7 +156,7 @@ function buildBody(prs, acceptInvalid, now = new Date()) {
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyy = now.getFullYear();
-  const dateLine = `Release on ${dd}/${mm}/${yyyy}`;
+  const dateLine = `Released on ${dd}/${mm}/${yyyy}`;
 
   const whatsChanged = `## What's changed`;
 
