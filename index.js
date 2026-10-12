@@ -1,6 +1,39 @@
-const core = require('@actions/core');
 const { execSync } = require('child_process');
 const fs = require('fs');
+
+// ---------------------------------------------------------------------------
+// Minimal replacement for @actions/core, so no dependency is needed at runtime.
+// ---------------------------------------------------------------------------
+
+function getInput(name) {
+  const key = `INPUT_${name.replace(/ /g, '_').toUpperCase()}`;
+  return process.env[key] || '';
+}
+
+function setOutput(name, value) {
+  const file = process.env.GITHUB_OUTPUT;
+  if (!file) return;
+  fs.appendFileSync(file, `${name}<<EOF\n${value}\nEOF\n`);
+}
+
+function info(msg) {
+  process.stdout.write(`${msg}\n`);
+}
+
+function warning(msg) {
+  process.stdout.write(`::warning::${msg}\n`);
+}
+
+function error(msg) {
+  process.stdout.write(`::error::${msg}\n`);
+}
+
+function setFailed(msg) {
+  process.stdout.write(`::error::${msg}\n`);
+  process.exitCode = 1;
+}
+
+// ---------------------------------------------------------------------------
 
 function sh(cmd, opts = {}) {
   return execSync(cmd, { encoding: 'utf8', ...opts }).trim();
@@ -43,7 +76,7 @@ async function fetchPRs(owner, repo, token, prevTag, currentTag) {
       .split('\n')
       .filter(Boolean);
   } catch (e) {
-    core.warning(`Could not read commit range ${range}: ${e.message}`);
+    warning(`Could not read commit range ${range}: ${e.message}`);
   }
 
   const prMap = new Map();
@@ -166,31 +199,35 @@ function buildBody(prs, acceptInvalid, now = new Date()) {
 }
 
 async function run() {
-  const repoName = core.getInput('repo_name', { required: true });
-  const repoOwner = core.getInput('repo_owner', { required: true });
-  const ghTag = core.getInput('gh_tag', { required: true });
-  const acceptInvalid =
-    core.getInput('accept_invalid_commit').toLowerCase() === 'true';
-  const token = core.getInput('github_token', { required: true });
-  const releaseName = core.getInput('release_name') || `Release ${ghTag}`;
-  const draft = core.getInput('draft').toLowerCase() === 'true';
-  const prerelease = core.getInput('prerelease').toLowerCase() === 'true';
+  const repoName = getInput('repo_name');
+  const repoOwner = getInput('repo_owner');
+  const ghTag = getInput('gh_tag');
+  const acceptInvalid = getInput('accept_invalid_commit').toLowerCase() === 'true';
+  const token = getInput('github_token') || process.env.GITHUB_TOKEN;
+  const releaseName = getInput('release_name') || `Release ${ghTag}`;
+  const draft = getInput('draft').toLowerCase() === 'true';
+  const prerelease = getInput('prerelease').toLowerCase() === 'true';
 
+  if (!repoName) throw new Error('Input "repo_name" is required.');
+  if (!repoOwner) throw new Error('Input "repo_owner" is required.');
   if (!ghTag || !ghTag.trim()) {
     throw new Error('Input "gh_tag" is required and must not be empty.');
+  }
+  if (!token) {
+    throw new Error('No GitHub token available. Set "github_token" or GITHUB_TOKEN.');
   }
 
   const tagName = ghTag.trim();
   const prevTag = getPreviousTag(tagName);
-  core.info(`Previous tag: ${prevTag || '(none)'}`);
-  core.info(`Current tag:  ${tagName}`);
+  info(`Previous tag: ${prevTag || '(none)'}`);
+  info(`Current tag:  ${tagName}`);
 
   const prs = await fetchPRs(repoOwner, repoName, token, prevTag, tagName);
-  core.info(`Found ${prs.length} PR(s).`);
+  info(`Found ${prs.length} PR(s).`);
 
   const body = buildBody(prs, acceptInvalid);
-  core.info('Release notes:');
-  core.info(body);
+  info('Release notes:');
+  info(body);
 
   const createRes = await ghApi(
     `/repos/${repoOwner}/${repoName}/releases`,
@@ -214,17 +251,17 @@ async function run() {
 
   const release = await createRes.json();
 
-  core.setOutput('release_url', release.html_url);
-  core.setOutput('release_id', String(release.id));
-  core.setOutput('release_body', body);
+  setOutput('release_url', release.html_url);
+  setOutput('release_id', String(release.id));
+  setOutput('release_body', body);
 
   fs.writeFileSync('release-notes.md', body);
 
-  core.info(`Release created successfully: ${release.html_url}`);
+  info(`Release created successfully: ${release.html_url}`);
 }
 
 if (require.main === module) {
-  run().catch((err) => core.setFailed(err.message));
+  run().catch((err) => setFailed(err.message));
 }
 
 module.exports = {
