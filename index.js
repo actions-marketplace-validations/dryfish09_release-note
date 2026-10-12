@@ -139,9 +139,18 @@ function buildBody(prs, acceptInvalid, now = new Date()) {
     );
   }
 
-  const sections = Object.values(GROUPS)
+  // Merge groups that share the same header (e.g. fix + hotfix -> "### Fixed")
+  const byHeader = new Map();
+  for (const g of Object.values(GROUPS)) {
+    if (g.items.length === 0) continue;
+    if (!byHeader.has(g.header)) {
+      byHeader.set(g.header, { order: g.order, header: g.header, items: [] });
+    }
+    byHeader.get(g.header).items.push(...g.items);
+  }
+
+  const sections = [...byHeader.values()]
     .sort((a, b) => a.order - b.order)
-    .filter((g) => g.items.length > 0)
     .map((g) => `${g.header}\n${g.items.join('\n')}`);
 
   const dd = String(now.getDate()).padStart(2, '0');
@@ -149,9 +158,11 @@ function buildBody(prs, acceptInvalid, now = new Date()) {
   const yyyy = now.getFullYear();
   const dateLine = `Release on ${dd}/${mm}/${yyyy}`;
 
+  const whatsChanged = `## What's changed`;
+
   return sections.length
-    ? `${sections.join('\n\n')}\n\n${dateLine}`
-    : `${dateLine}`;
+    ? `${whatsChanged}\n\n${sections.join('\n\n')}\n\n${dateLine}`
+    : `${whatsChanged}\n\n${dateLine}`;
 }
 
 async function run() {
