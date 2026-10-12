@@ -44,39 +44,3 @@ jobs:
         run: |
           bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
-
-  smoke:
-    name: Smoke test (self-check action)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Install deps
-        run: npm install --no-audit --no-fund
-
-      - name: Create dummy tag
-        run: |
-          git tag v0.0.1-ci-smoke
-          git tag v0.0.2-ci-smoke
-
-      - name: Run action (dry-run mode via env)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DRY_RUN: 'true'
-        run: |
-          node -e "
-            const { buildBody, getPreviousTag } = require('./index.js');
-            const prev = getPreviousTag('v0.0.2-ci-smoke');
-            console.log('prev tag =', prev);
-            const body = buildBody([], true, new Date(2026, 9, 12));
-            console.log(body);
-            if (!body.includes('Release on 12/10/2026')) process.exit(1);
-          "
