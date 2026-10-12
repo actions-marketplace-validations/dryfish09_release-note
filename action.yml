@@ -1,4 +1,4 @@
-name: 'release-note'
+name: 'DryFish release maker'
 description: 'Automatically create a GitHub Release, parse conventional commits and group them by type (feat/fix/docs/chore/style)'
 author: 'dryfish09'
 
